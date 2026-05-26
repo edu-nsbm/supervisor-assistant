@@ -10,8 +10,8 @@ BATCH = "26.1"
 
 data = []
 
-for _ in range(NUM_STUDENTS):
-    student_id = f"STU-{random.randint(10000, 99999)}"
+for i in range(NUM_STUDENTS):
+    student_id = f"STU-{i+1:03d}"
     name = fake.name()
     
     prog_fundamentals = np.clip(np.random.normal(65, 15), 0, 100)
