@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Supervisor Assistant API</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        :root {
+            --primary-bg: #f4f6f9;
+            --chat-bg: #ffffff;
+            --user-msg: #0056b3;
+            --ai-msg: #f1f3f5;
+            --text-color: #333333;
+            --border-color: #e1e4e8;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--primary-bg);
+            color: var(--text-color);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            height: 100vh;
+        }
+
+        .chat-container {
+            width: 100%;
+            max-width: 800px;
+            background-color: var(--chat-bg);
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .header {
+            background-color: var(--user-msg);
+            color: white;
+            padding: 20px;
+            text-align: center;
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+
+        .chat-box {
+            flex-grow: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .message {
+            max-width: 80%;
+            padding: 12px 16px;
+            border-radius: 8px;
+            line-height: 1.5;
+        }
+
+        .user-message {
+            align-self: flex-end;
+            background-color: var(--user-msg);
+            color: white;
+            border-bottom-right-radius: 0;
+        }
+
+        .ai-message {
+            align-self: flex-start;
+            background-color: var(--ai-msg);
+            color: var(--text-color);
+            border-bottom-left-radius: 0;
+            border: 1px solid var(--border-color);
+        }
+
+        /* Fix Markdown styling inside AI messages */
+        .ai-message p:first-child { margin-top: 0; }
+        .ai-message p:last-child { margin-bottom: 0; }
+        .ai-message pre { background: #e9ecef; padding: 10px; border-radius: 5px; overflow-x: auto; }
+
+        .metadata-badge {
+            display: inline-block;
+            background-color: #e2e8f0;
+            color: #475569;
+            font-size: 0.75rem;
+            padding: 4px 8px;
+            border-radius: 12px;
+            margin-top: 8px;
+            margin-right: 5px;
+            font-weight: bold;
+        }
+
+        .input-area {
+            display: flex;
+            padding: 20px;
+            background-color: var(--chat-bg);
+            border-top: 1px solid var(--border-color);
+        }
+
+        input[type="text"] {
+            flex-grow: 1;
+            padding: 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            font-size: 1rem;
+            outline: none;
+        }
+
+        input[type="text"]:focus {
+            border-color: var(--user-msg);
+        }
+
+        button {
+            background-color: var(--user-msg);
+            color: white;
+            border: none;
+            padding: 0 20px;
+            margin-left: 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: bold;
+            transition: background-color 0.2s;
+        }
+
+        button:hover {
+            background-color: #004494;
+        }
+
+        button:disabled {
+            background-color: #a0c4e8;
+            cursor: not-allowed;
+        }
+
+        .loading {
+            align-self: flex-start;
+            font-style: italic;
+            color: #666;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+<div class="chat-container">
+    <div class="header">
+        Academic Supervisor Assistant
+    </div>
+    
+    <div class="chat-box" id="chatBox">
+        <div class="message ai-message">
+            Hello. I am your academic administrative assistant. How can I help you review student data or identify risk profiles today?
+        </div>
+        <div class="loading" id="loadingIndicator">Assistant is analyzing records...</div>
+    </div>
+
+    <div class="input-area">
+        <input type="text" id="userInput" placeholder="Ask about struggling students, risk predictions, etc..." autocomplete="off">
+        <button id="sendBtn">Send</button>
+    </div>
+</div>
+
+<script>
+    // Configuration: Update this if your FastAPI server runs on a different port
+    const API_URL = "http://localhost:8000/api/supervisor/chat";
+
+    const chatBox = document.getElementById('chatBox');
+    const userInput = document.getElementById('userInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const loadingIndicator = document.getElementById('loadingIndicator');
+
+    // Handle Enter key
+    userInput.addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') {
+            sendMessage();
+        }
+    });
+
+    sendBtn.addEventListener('click', sendMessage);
+
+    async function sendMessage() {
+        const text = userInput.value.trim();
+        if (!text) return;
+
+        // 1. Display User Message
+        appendMessage(text, 'user-message');
+        userInput.value = '';
+        
+        // 2. UI Loading State
+        sendBtn.disabled = true;
+        loadingIndicator.style.display = 'block';
+        chatBox.scrollTop = chatBox.scrollHeight;
+
+        try {
+            // 3. Call the Backend API
+            const response = await fetch(API_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ message: text })
+            });
+
+            if (!response.ok) {
+                throw new Error(`Server error: ${response.status}`);
+            }
+
+            const data = await response.json();
+            
+            // 4. Display AI Response
+            appendAiMessage(data.answer, data.students_referenced);
+
+        } catch (error) {
+            appendMessage(`⚠️ Connection Error: Ensure your FastAPI backend is running on ${API_URL} and CORS is configured. Details: ${error.message}`, 'ai-message');
+        } finally {
+            // 5. Restore UI State
+            sendBtn.disabled = false;
+            loadingIndicator.style.display = 'none';
+            userInput.focus();
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+    }
+
+    function appendMessage(text, className) {
+        const msgDiv = document.createElement('div');
+        msgDiv.className = `message ${className}`;
+        msgDiv.textContent = text;
+        
+        // Insert before the loading indicator
+        chatBox.insertBefore(msgDiv, loadingIndicator);
+    }
+
+    function appendAiMessage(markdownText, studentsReferenced) {
+        const msgDiv = document.createElement('div');
+        msgDiv.className = 'message ai-message';
+        
+        // Parse markdown to HTML
+        msgDiv.innerHTML = marked.parse(markdownText);
+        
+        // Add badges for referenced students if they exist
+        if (studentsReferenced && studentsReferenced.length > 0) {
+            // Filter out nulls/undefined and get unique IDs
+            const uniqueStudents = [...new Set(studentsReferenced.filter(id => id))];
+            
+            if (uniqueStudents.length > 0) {
+                const metadataContainer = document.createElement('div');
+                metadataContainer.style.marginTop = '10px';
+                metadataContainer.style.borderTop = '1px solid #e1e4e8';
+                metadataContainer.style.paddingTop = '10px';
+                
+                uniqueStudents.forEach(studentId => {
+                    const badge = document.createElement('span');
+                    badge.className = 'metadata-badge';
+                    badge.textContent = `Ref: ${studentId}`;
+                    metadataContainer.appendChild(badge);
+                });
+                msgDiv.appendChild(metadataContainer);
+            }
+        }
+
+        chatBox.insertBefore(msgDiv, loadingIndicator);
+    }
+</script>
+
+</body>
+</html>
